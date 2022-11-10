@@ -11,7 +11,7 @@
  *	reflecting changes in the model to the view. Observable Slim aspires to be as lightweight and easily
  *	understood as possible. Minifies down to roughly 3000 characters.
  */
-import { isUndef, isArray } from "./helpers";
+import { isUndef, isArray, set } from "./helpers";
 import { OperationTypeEnum, diffTwoArray } from "./diff";
 
 const SLIM_PREFIX = "__slim_";
@@ -23,32 +23,36 @@ export const SLIM_KEYS = [
   "getParent",
   "getPath",
   "targetPosition",
-  "arrayOpChain",
+  "arrOpChain",
 ] as const;
 
 export type SlimKeys = typeof SLIM_KEYS[number];
 
-export const SLIM_FLAGS = SLIM_KEYS.reduce((cur, next) => {
+export const sFlag = SLIM_KEYS.reduce((cur, next) => {
   // TODO if remove 'as string' Type 'string' is not assignable to type 'never'. ? why
-  cur[next as string] = genSlimKey(next);
+  cur[next as string] = rKey(next);
   return cur;
 }, {} as { [k in SlimKeys]: SlimKey<k> });
 
 export type SlimKey<T extends SlimKeys> = `${typeof SLIM_PREFIX}${T}`;
 
-export function genSlimKey<T extends SlimKeys>(x: T): SlimKey<T> {
+export function rKey<T extends SlimKeys>(x: T): SlimKey<T> {
   return `${SLIM_PREFIX}${x}`;
 }
 
 export interface SlimReserveFlags {
-  [SLIM_FLAGS.length]: number;
-  [SLIM_FLAGS.arrOpPending]: boolean;
-  [SLIM_FLAGS.isProxy]: boolean;
-  [SLIM_FLAGS.getTarget]: any;
-  [SLIM_FLAGS.getParent]: any;
-  [SLIM_FLAGS.getPath]: string;
-  [SLIM_FLAGS.targetPosition]: number;
-  [SLIM_FLAGS.arrayOpChain]: string[];
+  [sFlag.length]: number;
+  [sFlag.arrOpPending]: boolean;
+  [sFlag.isProxy]: boolean;
+  [sFlag.getTarget]: any;
+  [sFlag.getParent]: any;
+  [sFlag.getPath]: string;
+  [sFlag.targetPosition]: number;
+  [sFlag.arrOpChain]: string[];
+}
+
+export function setTargetValue<T extends SlimReserveFlags>(target: T, key: SlimKeys, value: any) {
+  set(target, rKey(key), value);
 }
 
 export type CombineSlimReserveFlags<T> = T & SlimReserveFlags;
@@ -148,13 +152,13 @@ const _create = function (target, domDelay: number | boolean, originalObservable
   // we must use a helper property because intercepting a length change is not always possible as of 8/13/2018 in
   // Chrome -- the new `length` value is already set by the time the `set` handler is invoked
   if (isSlimArray(target)) {
-    if (!target.hasOwnProperty("__slim_length"))
-      Object.defineProperty(target, "__slim_length", {
+    if (!target.hasOwnProperty(sFlag.length))
+      Object.defineProperty(target, sFlag.length, {
         enumerable: false,
         value: target.length,
         writable: true,
       });
-    else target.__slim_length = target.length;
+    else target[sFlag.length] = target.length;
   }
 
   let changes: Change[] = [];
@@ -257,11 +261,11 @@ const _create = function (target, domDelay: number | boolean, originalObservable
     get: function (target, property) {
       // add arr batch operate
       if (isSlimArray(target) && ARRAY_OPERATION.includes(property)) {
-        if (target.__slim_arrOpPending) {
-          target.__slim_arrayOpChain.push(property);
+        if (target[sFlag.arrOpPending]) {
+          target[sFlag.arrOpChain].push(property);
         } else {
-          target.__slim_arrOpPending = true;
-          target.__slim_arrayOpChain = [property];
+          setTargetValue(target, "arrOpPending", true);
+          setTargetValue(target, "arrOpChain", [property]);
           const targetBuffer = {
             operate: property,
             value: [...target],
@@ -283,7 +287,7 @@ const _create = function (target, domDelay: number | boolean, originalObservable
               if (result.length === 1) {
                 ({ operationType, newValue, oldValue, elementIndex } = result[0]);
               }
-              target.__slim_arrOpPending = false;
+              target[sFlag.arrOpPending] = false;
 
               function isSame() {
                 return (
@@ -293,7 +297,7 @@ const _create = function (target, domDelay: number | boolean, originalObservable
 
               changes.push({
                 isSame: isSame(),
-                opChain: target.__slim_arrayOpChain,
+                opChain: target[sFlag.arrOpChain],
                 operation: property,
                 operationType: operationType,
                 target: target,
@@ -313,27 +317,27 @@ const _create = function (target, domDelay: number | boolean, originalObservable
       }
       // implement a simple check for whether or not the object is a proxy, this helps the .create() method avoid
       // creating Proxies of Proxies.
-      if (property === SLIM_FLAGS.getParent) {
+      if (property === sFlag.getTarget) {
         return target;
-      } else if (property === SLIM_FLAGS.isProxy) {
+      } else if (property === sFlag.isProxy) {
         return true;
         // from the perspective of a given observable on a parent object, return the parent object of the given nested object
-      } else if (property === SLIM_FLAGS.getParent) {
+      } else if (property === sFlag.getParent) {
         return function (i: number) {
           if (typeof i === "undefined") var i = 1;
-          var parentPath = _getPath(target, SLIM_FLAGS.getParent).fullPath.split(".");
+          const parentPath = _getPath(target, sFlag.getParent).fullPath.split(".");
           parentPath.splice(-(i + 1), i + 1);
           return _getProperty(observable.parentProxy, parentPath.join("."));
         };
         // return the full path of the current object relative to the parent observable
-      } else if (property === SLIM_FLAGS.getPath) {
+      } else if (property === sFlag.getPath) {
         // strip off the 17 characters for ".__slim_getParent"
-        var parentPath = _getPath(target, SLIM_FLAGS.getParent).fullPath;
+        const parentPath = _getPath(target, sFlag.getParent).fullPath;
         return parentPath.slice(0, -17);
       }
 
       // for performance improvements, we assign this to a variable so we do not have to lookup the property value again
-      var targetProp = target[property];
+      let targetProp = target[property];
       if (target instanceof Date && targetProp instanceof Function && targetProp !== null) {
         return targetProp.bind(target);
       }
@@ -343,15 +347,16 @@ const _create = function (target, domDelay: number | boolean, originalObservable
       // the target object and any objects nested within.
       if (targetProp instanceof Object && targetProp !== null && target.hasOwnProperty(property)) {
         // if we've found a proxy nested on the object, then we want to retrieve the original object behind that proxy
-        if (targetProp.__slim_isProxy === true) targetProp = targetProp.__slim_getTarget;
+        if (targetProp[rKey("isProxy")] === true) targetProp = targetProp[rKey("getTarget")];
 
         // if the object accessed by the user (targetProp) already has a __slim_targetPosition AND the object
-        // stored at target[targetProp.__slim_targetPosition] is not null, then that means we are already observing this object
+        // stored at target[targetProp[sFlag.targetPosition]] is not null, then that means we are already observing this object
         // we might be able to return a proxy that we've already created for the object
-        if (targetProp.__slim_targetPosition > -1 && targets[targetProp.__slim_targetPosition] !== null) {
+        const position = targetProp[rKey("targetPosition")];
+        if (position > -1 && position !== null) {
           // loop over the proxies that we've created for this object
-          var ttp = targetsProxy[targetProp.__slim_targetPosition];
-          for (var i = 0, l = ttp.length; i < l; i++) {
+          let ttp = targetsProxy[position];
+          for (let i = 0, l = ttp.length; i < l; i++) {
             // if we find a proxy that was setup for this particular observable, then return that proxy
             if (observable === ttp[i].observable) {
               return ttp[i].proxy;
@@ -363,7 +368,7 @@ const _create = function (target, domDelay: number | boolean, originalObservable
         // have to create a new proxy for it
 
         // create a shallow copy of the path array -- if we didn't create a shallow copy then all nested objects would share the same path array and the path wouldn't be accurate
-        var newPath = path.slice(0);
+        const newPath = path.slice(0);
         newPath.push({
           target: targetProp,
           property: property,
@@ -386,7 +391,7 @@ const _create = function (target, domDelay: number | boolean, originalObservable
       var previousValue = Object.assign({}, target);
 
       // record the deletion that just took place
-      if (!(target instanceof Array) || (isSlimArray(target) && !target.__slim_arrOpPending)) {
+      if (!(target instanceof Array) || (isSlimArray(target) && !target[sFlag.arrOpPending])) {
         const { fullPath, itemIdPath } = _getPath(target, property);
         changes.push({
           isSame: false,
@@ -440,7 +445,7 @@ const _create = function (target, domDelay: number | boolean, originalObservable
       // if the value we're assigning is an object, then we want to ensure
       // that we're assigning the original object, not the proxy, in order to avoid mixing
       // the actual targets and proxies -- creates issues with path logging if we don't do this
-      if (value && value.__slim_isProxy) value = value.__slim_getTarget;
+      if (value && value[sFlag.isProxy]) value = value[sFlag.getTarget];
 
       // was this change an original change or was it a change that was re-triggered below
       var originalChange = true;
@@ -462,7 +467,7 @@ const _create = function (target, domDelay: number | boolean, originalObservable
       if (
         targetProp !== value ||
         originalChange === false ||
-        (property === "length" && isSlimArray(target) && target.__slim_length !== value)
+        (property === "length" && isSlimArray(target) && target[sFlag.length] !== value)
       ) {
         var foundObservable = true;
 
@@ -473,7 +478,7 @@ const _create = function (target, domDelay: number | boolean, originalObservable
         if (typeOfTargetProp === "undefined") type = OperationTypeEnum.NEW;
 
         // store the change that just occurred. it is important that we store the change before invoking the other proxies so that the previousValue is correct
-        if (!(target instanceof Array) || (isSlimArray(target) && !target.__slim_arrOpPending)) {
+        if (!(target instanceof Array) || (isSlimArray(target) && !target[sFlag.arrOpPending])) {
           const { fullPath, itemIdPath } = _getPath(target, property);
           changes.push({
             isSame: false,
@@ -492,9 +497,9 @@ const _create = function (target, domDelay: number | boolean, originalObservable
 
         // mutations of arrays via .push or .splice actually modify the .length before the set handler is invoked
         // so in order to accurately report the correct previousValue for the .length, we have to use a helper property.
-        if (property === "length" && isSlimArray(target) && target.__slim_length !== value) {
-          // changes[changes.length-1].previousValue = target.__slim_length;
-          target.__slim_length = value;
+        if (property === "length" && isSlimArray(target) && target[sFlag.length] !== value) {
+          // changes[changes.length-1].previousValue = target[sFlag.length];
+          target[sFlag.length] = value;
         }
 
         // !!IMPORTANT!! if this proxy was the first proxy to receive the change, then we need to go check and see
@@ -508,14 +513,14 @@ const _create = function (target, domDelay: number | boolean, originalObservable
 
           foundObservable = false;
 
-          var targetPosition = target.__slim_targetPosition;
+          var targetPosition = target[sFlag.targetPosition];
           var z = targetsProxy[targetPosition].length;
 
           // find the parent target for this observable -- if the target for that observable has not been removed
           // from the targets array, then that means the observable is still active and we should notify the observers of this change
           while (z--) {
             if (observable === targetsProxy[targetPosition][z].observable) {
-              if (targets[targetsProxy[targetPosition][z].observable.parentTarget.__slim_targetPosition] !== null) {
+              if (targets[targetsProxy[targetPosition][z].observable.parentTarget[sFlag.targetPosition]] !== null) {
                 foundObservable = true;
                 break;
               }
@@ -629,7 +634,7 @@ const _create = function (target, domDelay: number | boolean, originalObservable
           // observers/proxies on all nested children of the object
           /* if (value instanceof Object && value !== null) {
 							(function iterate(proxy) {
-								var target = proxy.__slim_getTarget;
+								var target = proxy[sFlag.getTarget];
 								var keys = Object.keys(target);
 								for (var i = 0, l = keys.length; i < l; i++) {
 									var property = keys[i];
@@ -648,9 +653,9 @@ const _create = function (target, domDelay: number | boolean, originalObservable
     },
   };
 
-  let __slim_targetPosition = target.__slim_targetPosition;
-  if (!(__slim_targetPosition > -1)) {
-    Object.defineProperty(target, "__slim_targetPosition", {
+  const tPosition = target[sFlag.targetPosition];
+  if (!(tPosition > -1)) {
+    Object.defineProperty(target, sFlag.targetPosition, {
       value: targets.length,
       writable: false,
       enumerable: false,
@@ -659,7 +664,7 @@ const _create = function (target, domDelay: number | boolean, originalObservable
   }
 
   // create the proxy that we'll use to observe any changes
-  let proxy = new Proxy(target, handler);
+  const proxy = new Proxy(target, handler);
 
   // we don't want to create a new observable if this function was invoked recursively
   if (observable === null) {
@@ -676,18 +681,18 @@ const _create = function (target, domDelay: number | boolean, originalObservable
   }
 
   // store the proxy we've created so it isn't re-created unnecessarily via get handler
-  var proxyItem = { target: target, proxy: proxy, observable: observable };
+  const proxyItem = { target: target, proxy: proxy, observable: observable };
 
   // if we have already created a Proxy for this target object then we add it to the corresponding array
   // on targetsProxy (targets and targetsProxy work together as a Hash table indexed by the actual target object).
-  if (__slim_targetPosition > -1) {
+  if (tPosition > -1) {
     // the targets array is set to null for the position of this particular object, then we know that
     // the observable was removed some point in time for this object -- so we need to set the reference again
-    if (targets[__slim_targetPosition] === null) {
-      targets[__slim_targetPosition] = target;
+    if (targets[tPosition] === null) {
+      targets[tPosition] = target;
     }
 
-    targetsProxy[__slim_targetPosition].push(proxyItem);
+    targetsProxy[tPosition].push(proxyItem);
 
     // else this is a target object that we had not yet created a Proxy for, so we must add it to targets,
     // and push a new array on to targetsProxy containing the new Proxy
@@ -726,8 +731,8 @@ export const create = function <T>(targetIn: T, domDelay, observer): T {
   // test if the target is a Proxy, if it is then we need to retrieve the original object behind the Proxy.
   // we do not allow creating proxies of proxies because -- given the recursive design of ObservableSlim -- it would lead to sharp increases in memory usage
   let target = targetIn as CombineSlimReserveFlags<T>;
-  if (target.__slim_isProxy === true) {
-    target = target.__slim_getTarget;
+  if (target[sFlag.isProxy] === true) {
+    target = target[sFlag.getTarget];
     //if it is, then we should throw an error. we do not allow creating proxies of proxies
     // because -- given the recursive design of ObservableSlim -- it would lead to sharp increases in memory usage
     //throw new Error("ObservableSlim.create() cannot create a Proxy for a target object that is also a Proxy.");
@@ -742,7 +747,7 @@ export const create = function <T>(targetIn: T, domDelay, observer): T {
   // recursively loop over all nested objects on the proxy we've just created
   // this will allow the top observable to observe any changes that occur on a nested object
   (function iterate(proxy) {
-    const target = proxy.__slim_getTarget;
+    const target = proxy[sFlag.getTarget];
     const keys = Object.keys(target);
     for (let i = 0, l = keys.length; i < l; i++) {
       const property = keys[i];

@@ -1,8 +1,8 @@
 import { OperationTypeEnum } from "./diff";
 declare const SLIM_PREFIX = "__slim_";
-export declare const SLIM_KEYS: readonly ["length", "arrOpPending", "isProxy", "getTarget", "getParent", "getPath", "targetPosition", "arrayOpChain"];
+export declare const SLIM_KEYS: readonly ["length", "arrOpPending", "isProxy", "getTarget", "getParent", "getPath", "targetPosition", "arrOpChain"];
 export declare type SlimKeys = typeof SLIM_KEYS[number];
-export declare const SLIM_FLAGS: {
+export declare const sFlag: {
     length: "__slim_length";
     arrOpPending: "__slim_arrOpPending";
     isProxy: "__slim_isProxy";
@@ -10,20 +10,21 @@ export declare const SLIM_FLAGS: {
     getParent: "__slim_getParent";
     getPath: "__slim_getPath";
     targetPosition: "__slim_targetPosition";
-    arrayOpChain: "__slim_arrayOpChain";
+    arrOpChain: "__slim_arrOpChain";
 };
 export declare type SlimKey<T extends SlimKeys> = `${typeof SLIM_PREFIX}${T}`;
-export declare function genSlimKey<T extends SlimKeys>(x: T): SlimKey<T>;
+export declare function rKey<T extends SlimKeys>(x: T): SlimKey<T>;
 export interface SlimReserveFlags {
-    [SLIM_FLAGS.length]: number;
-    [SLIM_FLAGS.arrOpPending]: boolean;
-    [SLIM_FLAGS.isProxy]: boolean;
-    [SLIM_FLAGS.getTarget]: any;
-    [SLIM_FLAGS.getParent]: any;
-    [SLIM_FLAGS.getPath]: string;
-    [SLIM_FLAGS.targetPosition]: number;
-    [SLIM_FLAGS.arrayOpChain]: string[];
+    [sFlag.length]: number;
+    [sFlag.arrOpPending]: boolean;
+    [sFlag.isProxy]: boolean;
+    [sFlag.getTarget]: any;
+    [sFlag.getParent]: any;
+    [sFlag.getPath]: string;
+    [sFlag.targetPosition]: number;
+    [sFlag.arrOpChain]: string[];
 }
+export declare function setTargetValue<T extends SlimReserveFlags>(target: T, key: SlimKeys, value: any): void;
 export declare type CombineSlimReserveFlags<T> = T & SlimReserveFlags;
 export declare type SlimArray = any[] & SlimReserveFlags;
 export interface SlimObject extends SlimReserveFlags {

@@ -59,6 +59,7 @@
             change: () => {
               const [app] = appReactive;
               app.array1.reverse();
+              app.array1.reverse();
               app.array1[0].name = "1-1-2";
               app.array1.splice(0, 0, { name: "1-3", itemId: ++index });
               delete app.array1[0];
