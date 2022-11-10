@@ -79,7 +79,7 @@ export declare function isArrayChange(target: any, property: string | number): b
  * When invoked, this function is passed a single argument: an array of `ObservableSlimChange` detailing each change that has been made.
  * @returns {ProxyConstructor} Proxy of the target object.
  */
-export declare const create: <T>(targetIn: T, domDelay: any, observer: any) => T;
+export declare const create: <T>(targetIn: T, domDelay: any, observer: (change: Change[]) => void) => T;
 /**
  * Add a new observer function to an existing proxy.
  * @param {ProxyConstructor} proxy An ES6 `Proxy` created by the `create()` method.
@@ -121,7 +121,7 @@ export declare const resumeChanges: (proxy: any) => void;
  */
 export declare const remove: (proxy: any) => void;
 declare const _default: {
-    create: <T>(targetIn: T, domDelay: any, observer: any) => T;
+    create: <T>(targetIn: T, domDelay: any, observer: (change: Change[]) => void) => T;
     pause: (proxy: any) => void;
     remove: (proxy: any) => void;
     resume: (proxy: any) => void;

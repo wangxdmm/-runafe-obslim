@@ -727,7 +727,7 @@ const _create = function (target, domDelay: number | boolean, originalObservable
  * When invoked, this function is passed a single argument: an array of `ObservableSlimChange` detailing each change that has been made.
  * @returns {ProxyConstructor} Proxy of the target object.
  */
-export const create = function <T>(targetIn: T, domDelay, observer): T {
+export const create = function <T>(targetIn: T, domDelay, observer: (change: Change[]) => void): T {
   // test if the target is a Proxy, if it is then we need to retrieve the original object behind the Proxy.
   // we do not allow creating proxies of proxies because -- given the recursive design of ObservableSlim -- it would lead to sharp increases in memory usage
   let target = targetIn as CombineSlimReserveFlags<T>;
@@ -742,7 +742,7 @@ export const create = function <T>(targetIn: T, domDelay, observer): T {
   const proxy = _create(target, domDelay);
 
   // assign the observer function
-  if (typeof observer === "function") this.observe(proxy, observer);
+  if (typeof observer === "function") observe(proxy, observer);
 
   // recursively loop over all nested objects on the proxy we've just created
   // this will allow the top observable to observe any changes that occur on a nested object
